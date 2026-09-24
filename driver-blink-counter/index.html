@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#070b14">
+  <title>DriverBlink - Eye Blink & Fatigue Monitor</title>
+  
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+
+  <!-- MediaPipe Face Mesh & Camera Utils -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <!-- Urgent Wake-Up Alarm Banner -->
+  <div id="drowsinessBanner" class="drowsiness-alert-banner hidden">
+    ⚠️ ALERT: EYES CLOSED! WAKE UP!
+  </div>
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-icon">👁️</span>
+      <h1>DriverBlink <span style="font-size:0.75rem; font-weight:400; opacity:0.7;">AI HUD</span></h1>
+    </div>
+    <div class="header-actions">
+      <button id="historyBtn" class="icon-btn" title="View Past Drives">
+        📋 Records
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Dashboard -->
+  <main class="dashboard-container">
+    <div class="dashboard-grid">
+      
+      <!-- Camera & Eye Tracking Preview Card -->
+      <section id="cameraContainer" class="camera-card">
+        <div class="camera-wrapper">
+          <video id="cameraVideo" playsinline muted autoplay></video>
+          <canvas id="trackingCanvas"></canvas>
+        </div>
+        <div class="camera-status-bar">
+          <span id="cameraStatusText" class="status-badge status-inactive">Camera Inactive</span>
+          <div class="ear-meter-container" title="Eye Aspect Ratio (Openness)">
+            <span>EAR: <strong id="earCurrentVal">0.00</strong></span>
+            <div class="ear-meter-bar-bg">
+              <div id="earProgressBar" class="ear-meter-bar-fill"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Live Driving Metrics Card -->
+      <section class="metrics-card">
+        
+        <!-- Giant Blink Counter Display -->
+        <div class="blink-hero-box">
+          <span class="hero-label">Total Eye Blinks</span>
+          <div id="blinkCountDisplay" class="hero-number">0</div>
+          <div id="alertnessBadge" class="alertness-pill status-info">READY TO DRIVE</div>
+        </div>
+
+        <!-- Metrics Grid (Interval, BPM, Timer) -->
+        <div class="stats-grid">
+          <div class="stat-tile">
+            <span class="stat-label">Avg Interval</span>
+            <span id="avgIntervalDisplay" class="stat-value text-cyan">--</span>
+          </div>
+          <div class="stat-tile">
+            <span class="stat-label">Blink Rate</span>
+            <span id="bpmDisplay" class="stat-value text-emerald">0 BPM</span>
+          </div>
+          <div class="stat-tile">
+            <span class="stat-label">Drive Time</span>
+            <span id="timerDisplay" class="stat-value text-amber">00:00</span>
+          </div>
+        </div>
+
+        <!-- Big Touch Controls for Car Mounts -->
+        <div class="controls-card">
+          <div class="btn-row">
+            <button id="startBtn" class="btn btn-primary">
+              ▶ Start Drive
+            </button>
+            <button id="pauseBtn" class="btn btn-warning" disabled>
+              ⏸ Pause
+            </button>
+            <button id="stopBtn" class="btn btn-danger" disabled>
+              ⏹ End & Save
+            </button>
+          </div>
+
+          <!-- Quick Actions / Simulator -->
+          <div class="tools-row">
+            <button id="simulateBtn" class="tool-btn" disabled title="Simulate a blink to test counters and math">
+              🧪 Test Blink
+            </button>
+            <button id="testAlarmBtn" class="tool-btn" title="Verify buzzer alarm sound">
+              🔊 Test Alarm
+            </button>
+            <button id="calibrateBtn" class="tool-btn" title="Auto-tune sensitivity for your eyes">
+              🎯 Auto-Calibrate
+            </button>
+          </div>
+        </div>
+
+        <!-- In-Car Settings & Toggles -->
+        <div class="settings-drawer">
+          <div class="toggle-group">
+            <label class="toggle-item">
+              <input type="checkbox" id="hudToggle">
+              <span>Night HUD Mode (Pure Black)</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="batterySaverToggle">
+              <span>Battery Saver (Hide Video)</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="soundToggle" checked>
+              <span>Sound Effects</span>
+            </label>
+            <label class="toggle-item">
+              <input type="checkbox" id="voiceToggle" checked>
+              <span>Voice Spoken Alerts</span>
+            </label>
+          </div>
+
+          <div class="slider-group">
+            <span>Blink Sensitivity (EAR):</span>
+            <input type="range" id="earThresholdSlider" min="0.15" max="0.32" step="0.01" value="0.22">
+            <span id="earThresholdVal" style="font-weight: bold; width: 35px;">0.22</span>
+          </div>
+        </div>
+
+      </section>
+    </div>
+  </main>
+
+  <!-- Session Records Modal -->
+  <div id="historyModal" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>📋 Drive Session History</h2>
+        <button id="closeHistoryBtn" class="icon-btn">✕ Close</button>
+      </div>
+      <div class="modal-body">
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Session</th>
+                <th>Date & Time</th>
+                <th>Duration</th>
+                <th>Total Blinks</th>
+                <th>Avg Interval</th>
+                <th>Rate</th>
+                <th>Driver Status</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+          <div id="emptyHistoryMsg" class="empty-msg">
+            No driving sessions recorded yet. Complete a drive to view analytics.
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="clearHistoryBtn" class="btn btn-secondary">🗑 Clear Records</button>
+        <button id="exportCsvBtn" class="btn btn-primary">📥 Export to CSV (Excel)</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="audio.js"></script>
+  <script src="detector.js"></script>
+  <script src="app.js"></script>
+
+  <!-- Service Worker Registration for 100% Offline PWA -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then((reg) => console.log('[PWA] ServiceWorker registered with scope:', reg.scope))
+          .catch((err) => console.warn('[PWA] ServiceWorker registration failed:', err));
+      });
+    }
+  </script>
+</body>
+</html>
